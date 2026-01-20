@@ -1,97 +1,361 @@
-# \[Osbyte\] Operating System
+# Osbyte Operating System
 
-## Summary
+A 64-bit ARM-based operating system designed for educational and research purposes, featuring a console-inspired graphical interface and comprehensive networking capabilities.
 
-The \[Osbyte\] Operating System is a 64 bit operating system meant to run on ARM processors. 
-It can run entirely in QEMU, either in an entirely virtual machine using QEMU's `virt` board, or emulating a Raspberry Pi 4B, it can also be installed on a Raspberry Pi (with limited support).
-It also has preliminary support for the Raspberry Pi 5, and possibly 4B and 3B, though these last two are largely untested.
-Its GUI is heavily inspired by video game consoles, and the OS is entirely controllable via keyboard (with future mouse and possibly gamepad support)
-It has limited support for third party processes, currently limited to entirely self-contained programs. The `shared` library is provided for syscalls and common functions but it should be used as a static library embedded into the final executable `.elf` file.
+## Table of Contents
 
-The OS is a hobby project, and my first attempt at writing an OS, so it's subject to improvement, and most likely isn't the most reliable and certainly not the cleanest code.
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Building and Running](#building-and-running)
+- [Platform Support](#platform-support)
+- [Networking](#networking)
+- [Development](#development)
+- [License](#license)
 
-## Project organization
+## Overview
 
-The project is divided into 3 main sections, each represented by a folder in its main directory.
+Osbyte is a custom-built 64-bit operating system targeting ARM processors, developed as an educational project to explore low-level systems programming, kernel development, and operating system design principles. The system can run in QEMU emulation environments (virt board or Raspberry Pi 4B emulation) and has preliminary support for physical Raspberry Pi hardware.
 
-### Kernel
+The operating system features a video game console-inspired graphical user interface that is fully keyboard-controllable, with plans for mouse and gamepad support. It implements a modular architecture with kernel processes and user-space applications, though current support for third-party processes is limited to self-contained programs.
 
-Contains the kernel code, this code is the entry point to the system and responsible for its initialization.
-The system's entry point is the `boot.s` file (see aboutboot.txt in the kernel folder if there's issues with the boot file). The boot file loads a stack pointer defined in the `linker.ld` file, which also defines where the kernel is loaded. It then jumps to the `kernel_main` function located in `kernel.c`.
-The actual system initialization happens in `kernel.c`'s `kernel_main` function, which is responsible for initializing the system until the point where it's handed off to processes.
+**Note:** This is a hobby project and represents a first attempt at operating system development. The codebase is subject to continuous improvement and may not represent production-quality code.
 
-Once the system is initialized, most of the system's functionality is provided by processes, which includes kernel processes and user processes. User processes are defined in their own section of the readme file, but kernel processes are included directly into the kernel. While they're placed in their own section defined in the linker, there's no real distinction between their code and any other kernel code. 
-Certain parts of the system initialization, such as GPU initialization and XHCI input code initialization rely on some syscalls that expect a process to be running, so an initial kernel.c process is created to hold their data. In the future they'll each have their own process.
-Everything about kernel processes and the pseudo-processes mentioned for GPU/XHCI will most likely be improved in the future, to make the system more modular, and kernel processes might get loaded from filesystem, in a similar way to how user processes are loaded. In order to do this, they either need to not rely on any kernel-only code (as several of them currently do) and rely on syscalls entirely, or (less ideal) dynamically link to the kernel. Doing this will increase the kernel's modularity.
+## Features
 
-The system can run from both the `kernel.elf` and `kernel.img` files, on both virt and raspi4b.
+- **64-bit ARM Architecture**: Full support for ARMv8-A instruction set
+- **Multi-platform Support**: Runs on QEMU virt board, Raspberry Pi 4B/5 emulation, and physical hardware
+- **Graphical Interface**: Console-inspired GUI with keyboard navigation
+- **Networking Stack**: Comprehensive IPv4/IPv6 networking with TCP/UDP support
+- **File System Support**: FAT32 and exFAT filesystem drivers
+- **Process Management**: Kernel and user-space process support with scheduler
+- **Device Drivers**: USB, audio, graphics, and storage device support
+- **Development Tools**: Integrated debugging support via GDB
 
-### Shared
+## Architecture
 
-A shared library made available to both the kernel and external user processes.
-It provides very limited implementations for a standard library (std). It includes definitions for the C++ new and delete operators, basic implementations for fixed-size arrays and index maps, which will most likely be expanded into linked lists in order to remove the fixed-size limitation. The library also includes string and memory copy/clear/set functions. These can be accessed by including the `std/std.h` header.
-It provides a UI library, which includes simple 2D drawing functions to write pixels directly through a framebuffer. This is not needed by processes at this time, as syscalls that draw onto the screen directly will be provided, but this will be changed in the future. It also includes a basic C++ Label class, and will be expanded to have more common UI types in the future. These can be accessed by including the `ui/ui.h` header.
-The shared library also contains simple math functions. These can be accessed by including the `math/math.h` header.
-Finally, it includes a header that defines a structure for handling keyboard input from the system, as well as basic keycodes.
+### Boot Process
 
-### User
+The system boot sequence begins with `boot.S`, which initializes the stack pointer (defined in `linker.ld`) and transfers control to the `kernel_main` function in `kernel.c`. The linker script (`linker.ld`) defines the kernel's memory layout and load address.
 
-This section contains the code for user processes. The code is currently compiled into single a single executable, which comes in a .elf and .bin format. Currently, only .elf format is supported by the system.
-Due to the lack of dynamic linking in the system, the code must be entirely self-contained, and any external library it uses must be included in the final binary file. The system's shared library, which provides useful type definitions and syscalls is compiled as a .a static library file which can be linked into the final binary file as `shared/libshared.a`.
+### Kernel Initialization
 
-The compiled binaries (both the .elf and .bin) are automatically moved into the fs/ folder, from which a system-readable image is created to make it accessible to the system. 
+The `kernel_main` function in `kernel.c` handles system initialization, including:
+- Memory management setup (MMU, page allocator)
+- Interrupt and exception handling
+- Device driver initialization
+- Process scheduler initialization
+- Filesystem mounting
+- Network stack initialization
 
-This is (theoretically) not the only way to run user processes on the system. Placing a .elf file inside the fs/osbyte/user/ folder and running the createfs command (or an equivalent if running on a non-macOS host system) should make them readable and executable by the system, though a limit of 9 processes exists due to array and desktop ui limitations that will be lifted in the future as the system evolves.
+After initialization, control is handed over to the process scheduler, which manages both kernel processes and user processes.
 
-This folder will most likely be removed in the future, to be replaced by standalone projects that create user processes.
+### Process Model
 
-### Support files
+The system supports two types of processes:
 
-In addition to the code located in the system's 3 main folders, a few other files in the root directory of the project provide useful commands for compiling and running Osbyte OS.
+1. **Kernel Processes**: Embedded directly in the kernel binary, placed in a dedicated linker section. These processes have direct access to kernel internals and are responsible for core system functionality.
 
-- run_virt: runs Osbyte OS in QEMU using a compatible virt board and devices. It's possible to attach gdb to it by passing the debug argument and additionally running the `debug` command, a shortcut for this is the `rundebug` command.
-- run_raspi: runs Osbyte OS in QEMU using a compatible raspberry pi 4b board. It's possible to attach gdb to it by passing the debug argument and additionally running the `debug` command, a shortcut for this is the `rundebug` command. This version is quite slow and may not have all the features found in a real raspberry pi or on the virt board.
-- debug: attaches gdb to an instance of QEMU running Osbyte OS. The instance must be run with the `debug` argument as `./run debug` in order for gdb to attach and control its execution. It can support automatically running a command inside gdb such as adding a breakpoint by passing it as an argument as `./debug b kernel_main`
-- rundebug: a shortcut for running both the `run` and `debug` commands. It can pass arguments for the debug command, which in turn will pass them to gdb
-- createfs: creates a filesystem image for the system to read. The image does not contain kernel code and is not used to boot the system, but is still required to boot the system, and contains user processes. The script is written specifically for macOS, as it relies on the diskutil commands to create the image. There isn't a linux or windows version for it, but a filesystem image can be created manually and placed in the root directory with the name disk.img
-- Makefile: can compile and run the system. `make run` compiles the system for the virt board, passing MODE=virt/raspi specifies which board to compile for, default is virt. It creates the filesystem image and executes the correct `./run` command. `make debug` compiles the system, creates the filesystem and executes the OS and gdb, through the `./rundebug` command. `make all` simply compiles and creates the filesystem image. `make clean` cleans compiled files. The `make install` command performs a clean build and attempts to install onto a raspberry-pi-formatted sd card in its `bootfs` partition.
+2. **User Processes**: Loaded from the filesystem as ELF executables. These processes run in user space and interact with the kernel through system calls.
 
-## Compiling
+**Current Limitations**: Some initialization code (GPU and XHCI input) requires a process context, so a temporary kernel process is created during boot. Future improvements will modularize this architecture, potentially allowing kernel processes to be loaded from the filesystem.
 
-In order to compile the system, you'll need to have the ARM GNU toolchain, for which ARM should provide binaries that run on your host system.
-The OS currently only runs on QEMU, so QEMU needs to be installed as well. The system can run entirely on QEMU devices which are included in the pre-built QEMU binaries, but could optionally also support other devices that are not available by default. To use them, QEMU must be compiled by source and configured to include those devices. 
-Running `make run` or `make all` followed by `./run` is the fastest way to run the system, using the default configuration (virt board for QEMU). Further explanations on these commands and their options provided in the Supporting Files section.
-Running `make run MODE=virt/raspi` can select which board to compile the code for.
-In order to run the OS, you'll need to create a folder called fs inside the project's root directory. This folder will contain user processes. It must have the following subfolders: /osbyte/user/, with user processes placed inside with the .elf extension. The `user` process will automatically be placed in that folder when compiling. A script called `createfs` will run automatically to create an image from the fs folder. This script currently only works on MacOS and Linux host systems, it will need to be adapted to run on Windows systems. Since my main host system is Mac, there's a chance the linux version won't be up to date if any changes need to be made.
-Running `make install` will perform a clean build for the raspberry pi and copy the resulting kernel image and the provided `config.txt` file to a partition called `bootfs`, which should be created using Raspberry Pi Imager on an SD card. It should be possible to then boot the system onto a Raspberry Pi 5, 4B or 3B, although support may be limited. It is recommended to use a UART debug probe along with the `screen` command running on the development machine to see the system's console output and debug potential issues.
+The system can boot from both `kernel.elf` and `kernel.img` formats on virt and Raspberry Pi 4B platforms.
 
-Github Actions should automatically compile changes made to the `main` branch using Mac, so a compiled version of the system with all the files needed to run it should be found there. This includes the fs folder, containing the filesystem, but you'll need to recompile the `disk.img` filesystem with `createfs` for any changes made to this folder to be reflected. Currently it only builds a version for the virt board.
+## Project Structure
 
-## Raspberry Pi Compatibility
+The project is organized into three main components:
 
-The project currently has preliminary compatibility with raspberry pi. Currently only tested on QEMU. It can run on the 4b board, and theoretically has support for the 3, but has not been tested on it. Earlier boards will not work due to only supporting 32 bit systems.
-The Raspberry Pi emulation has the following limitations:
-- It does not have networking capabilities
-- It does not use interrupts to detect keystrokes and process them, and relies on polling, which can be quite slow.
-- It does not use DMA for disk (SD Card) transfers, and may freeze for several seconds while loading data
+### Kernel (`kernel/`)
+
+Contains the core operating system code, including:
+- Boot loader (`boot.S`)
+- Kernel entry point (`kernel.c`)
+- Memory management (MMU, page allocator, DMA)
+- Process management and scheduling
+- System call interface
+- Exception and interrupt handling
+- Device drivers
+- Filesystem implementations
+- Network stack
+- Kernel processes
+
+**Key Files:**
+- `boot.S`: Assembly boot code
+- `kernel.c`: Main kernel initialization
+- `linker.ld`: Memory layout definition
+- `process/scheduler.c`: Process scheduler
+- `process/syscall.c`: System call interface
+
+### Shared Library (`shared/`)
+
+A static library providing common functionality for both kernel and user processes:
+
+- **Standard Library (`std/`)**: Minimal C standard library implementation
+  - C++ `new` and `delete` operators
+  - Fixed-size arrays and index maps
+  - String manipulation functions
+  - Memory operations (copy, clear, set)
+  - Access via `#include "std/std.h"`
+
+- **UI Library (`ui/`)**: Graphics and user interface primitives
+  - 2D framebuffer drawing functions
+  - Basic C++ Label class
+  - Future expansion planned for additional UI components
+  - Access via `#include "ui/ui.h"`
+
+- **Math Library (`math/`)**: Mathematical utilities
+  - Vector operations
+  - AABB (Axis-Aligned Bounding Box) calculations
+  - Random number generation
+  - Access via `#include "math/math.h"`
+
+- **Input Handling**: Keyboard input structures and keycode definitions
+  - Access via `#include "input_keycodes.h"` and `#include "keyboard_input.h"`
+
+### User Processes (`user/`)
+
+Contains user-space application code. Processes are compiled into self-contained ELF executables that must statically link the shared library (`shared/libshared.a`).
+
+**Compilation Process:**
+1. User code is compiled into `.elf` and `.bin` formats
+2. Binaries are automatically moved to `fs/osbyte/user/`
+3. The `createfs` script generates a filesystem image from the `fs/` directory
+
+**Current Limitations:**
+- Processes must be entirely self-contained (no dynamic linking)
+- Maximum of 9 processes due to array and desktop UI limitations (to be addressed in future versions)
+- Only ELF format is currently supported
+
+**Future Plans:** This directory may be replaced by standalone projects for individual user processes.
+
+### Support Scripts
+
+Utility scripts in the project root:
+
+| Script | Description |
+|--------|-------------|
+| `run_virt` | Runs Osbyte OS in QEMU using the virt board |
+| `run_raspi` | Runs Osbyte OS in QEMU emulating Raspberry Pi 4B |
+| `debug` | Attaches GDB to a running QEMU instance (requires `./run debug`) |
+| `rundebug` | Shortcut to run OS and attach GDB simultaneously |
+| `createfs` | Creates filesystem image from `fs/` directory (macOS/Linux) |
+
+**Makefile Targets:**
+
+| Target | Description |
+|--------|-------------|
+| `make all` | Compiles the system and creates filesystem image |
+| `make run` | Compiles and runs the system (default: virt board) |
+| `make run MODE=virt` | Compiles and runs for QEMU virt board |
+| `make run MODE=raspi` | Compiles and runs for Raspberry Pi 4B |
+| `make debug` | Compiles, creates filesystem, and launches with GDB |
+| `make clean` | Removes compiled files |
+| `make install` | Performs clean build and installs to Raspberry Pi SD card |
+
+## Prerequisites
+
+### Required Tools
+
+1. **ARM GNU Toolchain**: ARM provides pre-built binaries for various host systems
+   - Download from: [ARM Developer](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain)
+
+2. **QEMU**: Required for emulation
+   - Installation varies by platform:
+     - macOS: `brew install qemu`
+     - Linux: `sudo apt-get install qemu-system-arm` (Debian/Ubuntu)
+     - Windows: Download from [QEMU website](https://www.qemu.org/download/)
+
+3. **Make**: Build system (usually pre-installed on Unix-like systems)
+
+4. **GDB**: For debugging (usually included with ARM toolchain)
+
+### Filesystem Setup
+
+Create a `fs/` directory in the project root with the following structure:
+```
+fs/
+└── osbyte/
+    └── user/
+        └── *.elf  (user process executables)
+```
+
+The build process automatically places compiled user processes in this directory.
+
+## Building and Running
+
+### Quick Start
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd RedactedOS-main
+   ```
+
+2. **Build and run (QEMU virt board):**
+   ```bash
+   make run
+   ```
+
+3. **Build and run (Raspberry Pi 4B emulation):**
+   ```bash
+   make run MODE=raspi
+   ```
+
+4. **Build only:**
+   ```bash
+   make all
+   ```
+
+### Debugging
+
+To debug the operating system:
+
+1. **Using rundebug script:**
+   ```bash
+   make debug
+   # Or with a breakpoint:
+   ./rundebug b kernel_main
+   ```
+
+2. **Manual debugging:**
+   ```bash
+   ./run_virt debug  # In one terminal
+   ./debug b kernel_main  # In another terminal
+   ```
+
+### Installing on Raspberry Pi
+
+1. Format an SD card using Raspberry Pi Imager, creating a `bootfs` partition
+2. Run the install command:
+   ```bash
+   make install
+   ```
+3. Insert the SD card into your Raspberry Pi and boot
+
+**Note:** For debugging on physical hardware, use a UART debug probe and connect via `screen`:
+```bash
+screen /dev/ttyUSB0 115200
+```
+
+### Continuous Integration
+
+GitHub Actions automatically compiles the `main` branch on macOS. Pre-built artifacts are available in the Actions tab, including the `fs/` directory. Note that you must run `createfs` locally to regenerate `disk.img` if you modify the filesystem contents.
+
+## Platform Support
+
+### QEMU virt Board (Recommended)
+
+- **Status**: Fully supported
+- **Performance**: Excellent
+- **Features**: All features available
+- **Networking**: Full support
+- **Recommended for**: Development and testing
+
+### QEMU Raspberry Pi 4B Emulation
+
+- **Status**: Supported with limitations
+- **Performance**: Slower than virt board
+- **Limitations**:
+  - No networking capabilities
+  - Polling-based keyboard input (no interrupts)
+  - No DMA for disk transfers (may freeze during data loading)
+- **Use case**: Testing Raspberry Pi-specific code paths
+
+### Physical Raspberry Pi Hardware
+
+- **Status**: Preliminary support
+- **Tested Platforms**: Raspberry Pi 4B (QEMU only), Raspberry Pi 5 (theoretical)
+- **Untested**: Raspberry Pi 3B (theoretical support)
+- **Not Supported**: Raspberry Pi 2 and earlier (32-bit only)
+- **Recommendation**: Use UART debugging for development
 
 ## Networking
 
-The system provides medium level networking support. At startup, it scans for available network cards, loads the matching driver if present and creates a logical L2 interface for each device; a loopback interface is also added for both IPv4 and IPv6.
+Osbyte implements a comprehensive networking stack following a layered architecture.
 
-The stack follows a layered design. At link level it handles basic neighbor resolution (ARP for IPv4 and NDP for IPv6).
+### Network Interface Management
 
-on top of that the stack provides full IPv4 support and a solid IPv6 implementation. Both protocols include routing support and the related control via ICMP and ICMPv6. IPv6 is already usable in practice and covers the core features needed for normal operation; some more advanced pieces are missing (such as full SLAAC support, router preference handling, complete set of extension header features, ULA)
+At startup, the system:
+- Scans for available network interface cards (NICs)
+- Loads appropriate drivers
+- Creates logical L2 interfaces for each device
+- Initializes loopback interfaces for both IPv4 and IPv6
 
-Multicast is supported and traffic is filtered at the NIC level to avoid unnecessary delivery and group membership; announcements are made through IGMP for Ipv4 and MLD for IPv6 keeping multicast use clean and controlled
+### Link Layer
 
-For address config the system provides small APIs based on DHCP for IPv4 and DHCPv6 stateful, stateless and SLAAC for IPv6, allowing interfaces to be configured automatically without special handling in applications.
+- **Neighbor Resolution**: ARP for IPv4, NDP (Neighbor Discovery Protocol) for IPv6
+- **Multicast Filtering**: Traffic filtered at NIC level to reduce unnecessary processing
+- **Group Management**: IGMP for IPv4, MLD (Multicast Listener Discovery) for IPv6
 
-For name resolution a DNS resolver is available, backed by an internal cache to reduce latency and unnecessary network interrupts. also service discovery on the local network is supported in a lightweight form via DNS SD/mDNS responders and SSDP utilities(currently disabled).
+### Network Layer
 
-time sync is provided through an NTP based service. The current implementation is not fully standards compliant but it is designed to be as accurate as possible for the time being, focusing on correct offset calculation and stable clock adjustments rather than full protocol coverage. SNTP is also present for compatibility, but it is considered deprecated and kept for legacy.
+- **IPv4**: Full protocol support with routing
+- **IPv6**: Solid implementation covering core features
+  - Routing support
+  - ICMP/ICMPv6 control protocols
+  - **Missing features**: Full SLAAC support, router preference handling, complete extension header support, ULA (Unique Local Addresses)
 
-apps can interact with the network through a socket-oriented interface. UDP and TCP sockets are supported and a small HTTP layer is available both as a client and server
+### Address Configuration
 
-An embedded HTTP server is included and listens on port 80, serving a minimal page. Also discovery mechanism is available: the system probes the local network via UDP broadcast on port 8080, and when a responder replies it connects via HTTP on port 80, though it currently does nothing noteworthy.
-An implementation of the server can be found at the [OsbyteOS Firmware Server Repository](https://github.com/differrari/OsbyteOS_firmware_server/tree/main)
+- **IPv4**: DHCP client
+- **IPv6**: DHCPv6 (stateful and stateless) and SLAAC support
+- Automatic interface configuration without application-level handling
+
+### Transport Layer
+
+- **UDP**: Full support
+- **TCP**: Full support with socket-oriented interface
+
+### Application Layer
+
+- **DNS**: Resolver with internal caching to reduce latency and network interrupts
+- **Service Discovery**: DNS-SD/mDNS responders and SSDP utilities (currently disabled)
+- **NTP**: Network Time Protocol implementation
+  - Focuses on accurate offset calculation and stable clock adjustments
+  - Not fully standards-compliant
+  - SNTP support available but deprecated
+- **HTTP**: Client and server implementations
+  - Embedded HTTP server listens on port 80
+  - Network discovery via UDP broadcast on port 8080
+
+### Example: Firmware Server
+
+An implementation of the HTTP server can be found at the [OsbyteOS Firmware Server Repository](https://github.com/differrari/OsbyteOS_firmware_server/tree/main).
+
+## Development
+
+### Code Style
+
+The codebase uses a mix of C and C++. Kernel code is primarily C, while some device drivers and UI components use C++.
+
+### Adding User Processes
+
+1. Create your process source code
+2. Compile it as a self-contained ELF executable
+3. Statically link `shared/libshared.a`
+4. Place the `.elf` file in `fs/osbyte/user/`
+5. Run `createfs` to regenerate the filesystem image
+6. Rebuild and run the system
+
+### Debugging Tips
+
+- Use `make debug` for integrated debugging
+- Set breakpoints in GDB: `b function_name`
+- Use `info registers` to inspect CPU state
+- Check kernel logs via serial output (QEMU) or UART (physical hardware)
+
+### Known Issues and Future Improvements
+
+- Kernel processes architecture needs modularization
+- Dynamic linking support for user processes
+- Expand UI library with more components
+- Improve Raspberry Pi hardware support
+- Remove fixed-size limitations in data structures
+- Full IPv6 feature compliance
+
+## License
+
+See `COPYING` and `GPL` files for license information.

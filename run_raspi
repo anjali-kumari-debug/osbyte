@@ -1,0 +1,34 @@
+#!/bin/bash
+
+echo "Running raspi emulator"
+
+ARGS=""
+if [ "$1" = "debug" ]; then
+  ARGS="-monitor unix:/tmp/qemu-monitor-socket,server,nowait -s -S"
+fi
+
+OS_TYPE="$(uname)"
+
+DISPLAY_MODE="default"
+
+if [ "$OS_TYPE" = "Darwin" ]; then
+    PRIVILEGE=""
+    DISPLAY_MODE="cocoa"
+elif [ "$OS_TYPE" = "Linux" ]; then
+    NETARG="user,id=net0"
+    PRIVILEGE=""
+else
+    echo "Unknown OS: $OS_TYPE" >&2
+    exit 1
+fi
+
+$PRIVILEGE qemu-system-aarch64 \
+-M raspi4b \
+-kernel kernel.img \
+-display $DISPLAY_MODE \
+-device sd-card,drive=sd -drive id=sd,format=raw,file=disk.img,if=none \
+-serial mon:stdio \
+-device usb-kbd \
+-device usb-mouse \
+-d guest_errors \
+$ARGS

@@ -1,0 +1,24 @@
+#!/bin/bash
+
+MODE="virt"
+ARGS=()
+
+for arg in "$@"; do
+  case $arg in
+    MODE=*) MODE="${arg#MODE=}" ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+
+echo $OS_TYPE
+
+if [[ "$(uname)" = "Darwin" ]]; then
+osascript <<EOF
+tell application "Terminal"
+    do script "cd \"$PWD\"; ./run_$MODE debug"
+    do script "cd \"$PWD\"; ./debug ${ARGS[*]}"
+end tell
+EOF
+else
+  (./run_$MODE debug) & (./debug ${ARGS[*]})
+fi
